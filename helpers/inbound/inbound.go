@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -14,8 +13,6 @@ import (
 // ParsedEmail defines a multipart parsed email
 // Body and Attachments are only populated if the Raw option is checked on the SendGrid inbound configuration and are named for backwards compatability
 type ParsedEmail struct {
-	// Header values are raw and not pre-processed by SendGrid. They may change depending on the email client. Use carefully
-	Headers map[string]string
 	// Please see https://docs.sendgrid.com/for-developers/parsing-email/setting-up-the-inbound-parse-webhook to see the available fields in the email headers
 	// all fields listed there are available within the headers map except for text which lives in the TextBody field
 	ParsedValues map[string]string
@@ -53,7 +50,6 @@ type EmailAttachment struct {
 // This method skips processing the attachment file and is therefore more performant
 func Parse(request *http.Request) (*ParsedEmail, error) {
 	result := ParsedEmail{
-		Headers:           make(map[string]string),
 		ParsedValues:      make(map[string]string),
 		ParsedAttachments: make(map[string]*EmailAttachment),
 
@@ -71,7 +67,6 @@ func Parse(request *http.Request) (*ParsedEmail, error) {
 // ParseWithAttachments parses an email using Go's multipart parser and populates the headers, body and processes attachments
 func ParseWithAttachments(request *http.Request) (*ParsedEmail, error) {
 	result := ParsedEmail{
-		Headers:           make(map[string]string),
 		ParsedAttachments: make(map[string]*EmailAttachment),
 		ParsedValues:      make(map[string]string),
 
@@ -100,11 +95,6 @@ func (email *ParsedEmail) parse() error {
 		}
 	}
 
-	// parse included headers
-	if len(email.rawValues["headers"]) > 0 {
-		email.parseHeaders(email.rawValues["headers"][0])
-	}
-
 	// apply the rest of the SendGrid fields to the headers map
 	for k, v := range email.rawValues {
 		if k == "text" || k == "email" || k == "headers" || k == "envelope" {
@@ -119,11 +109,6 @@ func (email *ParsedEmail) parse() error {
 	// apply the plain text body
 	if len(email.rawValues["text"]) > 0 {
 		email.TextBody = email.rawValues["text"][0]
-	}
-
-	// only included if the raw box is checked
-	if len(email.rawValues["email"]) > 0 {
-		email.parseRawEmail(email.rawValues["email"][0])
 	}
 
 	// if the client chose not to parse attachments, return as is
@@ -164,55 +149,6 @@ func (email *ParsedEmail) parseAttachments(values map[string][]string) error {
 	return nil
 }
 
-func (email *ParsedEmail) parseRawEmail(rawEmail string) error {
-	sections := strings.SplitN(rawEmail, "\n\n", 2)
-	email.parseHeaders(sections[0])
-	raw, err := parseMultipart(strings.NewReader(sections[1]), email.Headers["Content-Type"])
-	if err != nil {
-		return err
-	}
-
-	for {
-		emailPart, err := raw.NextPart()
-		if err == io.EOF {
-			return nil
-		}
-		rawEmailBody, err := parseMultipart(emailPart, emailPart.Header.Get("Content-Type"))
-		if err != nil {
-			return err
-		}
-		if rawEmailBody != nil {
-			for {
-				emailBodyPart, err := rawEmailBody.NextPart()
-				if err == io.EOF {
-					break
-				}
-				header := emailBodyPart.Header.Get("Content-Type")
-				b, err := ioutil.ReadAll(emailPart)
-				if err != nil {
-					return err
-				}
-				email.Body[header] = string(b)
-			}
-
-		} else if emailPart.FileName() != "" {
-			b, err := ioutil.ReadAll(emailPart)
-			if err != nil {
-				return err
-			}
-			email.Attachments[emailPart.FileName()] = b
-		} else {
-			header := emailPart.Header.Get("Content-Type")
-			b, err := ioutil.ReadAll(emailPart)
-			if err != nil {
-				return err
-			}
-
-			email.Body[header] = string(b)
-		}
-	}
-}
-
 func parseMultipart(body io.Reader, contentType string) (*multipart.Reader, error) {
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -223,14 +159,6 @@ func parseMultipart(body io.Reader, contentType string) (*multipart.Reader, erro
 		return multipart.NewReader(body, params["boundary"]), nil
 	}
 	return nil, nil
-}
-
-func (email *ParsedEmail) parseHeaders(headers string) {
-	splitHeaders := strings.Split(strings.TrimSpace(headers), "\n")
-	for _, header := range splitHeaders {
-		splitHeader := strings.SplitN(header, ": ", 2)
-		email.Headers[splitHeader[0]] = splitHeader[1]
-	}
 }
 
 // Validate validates the DKIM and SPF scores to ensure that the email client and address was not spoofed

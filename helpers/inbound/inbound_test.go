@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"testing"
 
@@ -33,14 +32,6 @@ func TestParse(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "NoAttachment",
-			file: "./sample_data/raw_data.txt",
-		},
-		{
-			name: "Attachment",
-			file: "./sample_data/raw_data_with_attachments.txt",
-		},
-		{
 			name: "DefaultData",
 			file: "./sample_data/default_data.txt",
 		},
@@ -65,111 +56,8 @@ func TestParse(t *testing.T) {
 
 			assert.NoError(subTest, err, "did NOT expect an error to occur")
 
-			from := "Example User <test@example.com>"
-			assert.Equalf(subTest, email.Headers["From"], from, "Expected From: %s, Got: %s", from, email.Headers["From"])
-		})
-	}
-}
-
-func ExampleParsedEmail_parseHeaders() {
-	headers := `
-Foo: foo
-Bar: baz
-`
-	email := ParsedEmail{
-		Headers:     make(map[string]string),
-		Body:        make(map[string]string),
-		Attachments: make(map[string][]byte),
-		rawRequest:  nil,
-	}
-	email.parseHeaders(headers)
-	fmt.Println(email.Headers["Foo"])
-	fmt.Println(email.Headers["Bar"])
-	// Output:
-	// foo
-	// baz
-}
-
-func ExampleParsedEmail_parseRawEmail() {
-	rawEmail := `
-To: test@example.com
-From: example@example.com
-Subject: Test Email
-Content-Type: multipart/mixed; boundary=TwiLIo
-
---TwiLIo
-Content-Type: text/plain; charset=UTF-8
-
-Hello Twilio SendGrid!
---TwiLIo
-Content-Type: text/html; charset=UTF-8
-Content-Transfer-Encoding: quoted-printable
-
-<html><body><strong>Hello Twilio SendGrid!</body></html>
---TwiLIo--
-`
-	email := ParsedEmail{
-		Headers:     make(map[string]string),
-		Body:        make(map[string]string),
-		Attachments: make(map[string][]byte),
-		rawRequest:  nil,
-	}
-
-	if err := email.parseRawEmail(rawEmail); err != nil {
-		log.Fatal(err)
-	}
-
-	for key, value := range email.Headers {
-		fmt.Println(key, value)
-	}
-	fmt.Println(email.Body["text/plain; charset=UTF-8"])
-	// Unordered Output:
-	// To test@example.com
-	// From example@example.com
-	// Subject Test Email
-	// Content-Type multipart/mixed; boundary=TwiLIo
-	// Hello Twilio SendGrid!
-}
-
-func TestValidate(t *testing.T) {
-	tests := []struct {
-		name          string
-		values        map[string][]string
-		expectedError error
-	}{
-		{
-			name:          "MissingHeaders",
-			values:        map[string][]string{},
-			expectedError: fmt.Errorf("missing DKIM and SPF score"),
-		},
-		{
-			name:          "FailedDkim",
-			values:        map[string][]string{"dkim": {"pass", "fail", "pass"}, "SPF": {"pass"}},
-			expectedError: fmt.Errorf("DKIM validation failed"),
-		},
-		{
-			name:          "FailedSpf",
-			values:        map[string][]string{"dkim": {"pass", "pass", "pass"}, "SPF": {"pass", "fail", "pass"}},
-			expectedError: fmt.Errorf("SPF validation failed"),
-		},
-		{
-			name:   "success",
-			values: map[string][]string{"dkim": {"pass", "pass", "pass"}, "SPF": {"pass", "pass", "pass"}},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(subTest *testing.T) {
-			//Load POST body
-			email := ParsedEmail{rawValues: test.values}
-			err := email.Validate()
-
-			if test.expectedError != nil {
-				assert.EqualError(subTest, test.expectedError, err.Error())
-				return
-			}
-
-			assert.NoError(subTest, err, "did NOT expect an error to occur")
+			from := "test@example.com"
+			assert.Equalf(subTest, email.Envelope.From, from, "Expected From: %s, Got: %s", from, email.Envelope.From)
 		})
 	}
 }
