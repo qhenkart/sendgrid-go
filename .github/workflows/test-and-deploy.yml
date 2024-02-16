@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        go: [ '1.14', '1.15', '1.16', '1.17' ]
+        go: [ '1.14', '1.15', '1.16', '1.17', '1.18', '1.19' ]
     env:
       DOCKER_LOGIN: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_AUTH_TOKEN }}
     steps:
@@ -58,6 +58,11 @@ jobs:
         uses: sendgrid/dx-automator/actions/release@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Submit metric to Datadog
+        uses: sendgrid/dx-automator/actions/datadog-release-metric@main
+        env:
+          DD_API_KEY: ${{ secrets.DATADOG_API_KEY }}
 
   notify-on-failure:
     name: Slack notify on failure
